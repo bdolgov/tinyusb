@@ -248,7 +248,7 @@ static void __tusb_irq_path_func(xfer_complete_isr)(hw_endpoint_t *ep, xfer_resu
 }
 
 static void __tusb_irq_path_func(handle_buf_status_isr)(void) {
-  pico_trace("buf_status 0x%08lx\n", buf_status);
+  pico_trace("buf_status 0x%08lx\n", usb_hw->buf_status);
   enum {
     BUF_STATUS_EPX = 1u
   };
