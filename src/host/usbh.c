@@ -1153,10 +1153,11 @@ static bool usbh_edpt_control_open(uint8_t dev_addr, uint8_t max_packet_size) {
 }
 
 bool tuh_edpt_open(uint8_t dev_addr, tusb_desc_endpoint_t const* desc_ep) {
-  // HACK: some device incorrectly always reports 512 bulk regardless of link speed, overwrite descriptor to force 64
-  if (desc_ep->bmAttributes.xfer == TUSB_XFER_BULK && tu_edpt_packet_size(desc_ep) > 64 &&
-      tuh_speed_get(dev_addr) == TUSB_SPEED_FULL) {
-    TU_LOG1("  WARN: EP max packet size is 512 in fullspeed, force to 64\r\n");
+  // HACK: some devices incorrectly always report huge sizes regardless of link speed, overwrite
+  // descriptor to force 64 in full speed mode.
+  if ((desc_ep->bmAttributes.xfer == TUSB_XFER_BULK || desc_ep->bmAttributes.xfer == TUSB_XFER_INTERRUPT) &&
+      tu_edpt_packet_size(desc_ep) > 64 && tuh_speed_get(dev_addr) == TUSB_SPEED_FULL) {
+    TU_LOG1("  WARN: EP max packet size is %d in fullspeed, force to 64\r\n", tu_edpt_packet_size(desc_ep));
     tusb_desc_endpoint_t *hacked_ep = (tusb_desc_endpoint_t *)(uintptr_t)desc_ep;
     hacked_ep->wMaxPacketSize       = tu_htole16(64);
   }
