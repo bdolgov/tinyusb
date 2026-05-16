@@ -31,9 +31,12 @@
 
   #include <stdlib.h>
   #include "rp2040_usb.h"
-
-  #include "device/dcd.h"
-  #include "host/hcd.h"
+  #if CFG_TUD_ENABLED
+    #include "device/dcd.h"
+  #endif
+  #if CFG_TUH_ENABLED
+    #include "host/hcd.h"
+  #endif
 
 //--------------------------------------------------------------------+
 // MACRO CONSTANT TYPEDEF PROTOTYPE
@@ -46,7 +49,7 @@ static bool e15_is_critical_frame_period(void);
 static uint8_t rp2040_chipversion = 2;
   #endif
 
-critical_section_t rp2usb_lock;
+OSAL_SPINLOCK_DEF(rp2usb_lock, rp2usb_irq_set_enabled);
 
 //--------------------------------------------------------------------+
 // Implementation
@@ -101,7 +104,7 @@ void rp2usb_init(void) {
 
   TU_LOG2_INT(sizeof(hw_endpoint_t));
 
-  critical_section_init(&rp2usb_lock);
+  osal_spin_init(&rp2usb_lock);
 }
 
 void __tusb_irq_path_func(rp2usb_reset_transfer)(hw_endpoint_t *ep) {
@@ -475,4 +478,18 @@ static bool __tusb_irq_path_func(e15_is_critical_frame_period)(void) {
 }
 
   #endif
+
+#ifndef CFG_TUH_RPI_EXTERNAL_IRQ
+#include "hardware/irq.h"
+void rp2usb_irq_set_enabled(bool enable) {
+  irq_set_enabled(USBCTRL_IRQ, enable);
+}
+void rp2usb_irq_set_handler(void (*handler)(void)) {
+  irq_add_shared_handler(USBCTRL_IRQ, handler, PICO_SHARED_IRQ_HANDLER_HIGHEST_ORDER_PRIORITY);
+}
+void rp2usb_irq_remove_handler(void (*handler)(void)) {
+  irq_remove_handler(USBCTRL_IRQ, handler);
+}
+
+#endif
 #endif

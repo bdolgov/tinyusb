@@ -422,8 +422,8 @@ bool hcd_init(uint8_t rhport, const tusb_rhport_init_t *rh_init) {
   usb_hw->pwr = USB_USB_PWR_VBUS_DETECT_BITS | USB_USB_PWR_VBUS_DETECT_OVERRIDE_EN_BITS;
 
   // Remove shared irq if it was previously added so as not to fill up shared irq slots
-  irq_remove_handler(USBCTRL_IRQ, hcd_rp2040_irq);
-  irq_add_shared_handler(USBCTRL_IRQ, hcd_rp2040_irq, PICO_SHARED_IRQ_HANDLER_HIGHEST_ORDER_PRIORITY);
+  rp2usb_irq_remove_handler(hcd_rp2040_irq);
+  rp2usb_irq_set_handler(hcd_rp2040_irq);
 
   // clear epx and interrupt eps
   memset(&ep_pool, 0, sizeof(ep_pool));
@@ -444,7 +444,7 @@ bool hcd_init(uint8_t rhport, const tusb_rhport_init_t *rh_init) {
 
 bool hcd_deinit(uint8_t rhport) {
   (void)rhport;
-  irq_remove_handler(USBCTRL_IRQ, hcd_rp2040_irq);
+  rp2usb_irq_remove_handler(hcd_rp2040_irq);
   reset_block(RESETS_RESET_USBCTRL_BITS);
   unreset_block_wait(RESETS_RESET_USBCTRL_BITS);
   return true;
@@ -484,7 +484,7 @@ void hcd_device_close(uint8_t rhport, uint8_t dev_addr) {
     return; // address 0 is for device enumeration
   }
 
-  rp2usb_critical_enter();
+  osal_spin_lock(&rp2usb_lock, false);
 
   for (size_t i = 0; i < TU_ARRAY_SIZE(ep_pool); i++) {
     hw_endpoint_t *ep = &ep_pool[i];
@@ -506,7 +506,7 @@ void hcd_device_close(uint8_t rhport, uint8_t dev_addr) {
     }
   }
 
-  rp2usb_critical_exit();
+  osal_spin_unlock(&rp2usb_lock, false);
 }
 
 uint32_t hcd_frame_number(uint8_t rhport) {
@@ -516,13 +516,13 @@ uint32_t hcd_frame_number(uint8_t rhport) {
 
 void hcd_int_enable(uint8_t rhport) {
   (void)rhport;
-  irq_set_enabled(USBCTRL_IRQ, true);
+  rp2usb_irq_set_enabled(true);
 }
 
 void hcd_int_disable(uint8_t rhport) {
   (void)rhport;
   // todo we should check this is disabling from the correct core; note currently this is never called
-  irq_set_enabled(USBCTRL_IRQ, false);
+  rp2usb_irq_set_enabled(false);
 }
 
 //--------------------------------------------------------------------+
@@ -630,7 +630,7 @@ bool hcd_edpt_xfer(uint8_t rhport, uint8_t dev_addr, uint8_t ep_addr, uint8_t *b
     }
 
     // If EPX is busy with another transfer, mark as pending
-    rp2usb_critical_enter();
+    osal_spin_lock(&rp2usb_lock, false);
     if (epx->state == EPSTATE_ACTIVE) {
       ep->user_buf      = buffer;
       ep->remaining_len = buflen;
@@ -654,7 +654,7 @@ bool hcd_edpt_xfer(uint8_t rhport, uint8_t dev_addr, uint8_t ep_addr, uint8_t *b
       usb_hw->dev_addr_ctrl = (uint32_t)(ep->dev_addr | (tu_edpt_number(ep->ep_addr) << USB_ADDR_ENDP_ENDPOINT_LSB));
       sie_start_xfer(false, tu_edpt_dir(ep->ep_addr) == TUSB_DIR_IN, ep->need_pre);
     }
-    rp2usb_critical_exit();
+    osal_spin_unlock(&rp2usb_lock, false);
   }
 
   return true;
@@ -666,7 +666,7 @@ bool hcd_setup_send(uint8_t rhport, uint8_t dev_addr, const uint8_t setup_packet
   hw_endpoint_t *ep = edpt_find(dev_addr, 0x00);
   TU_ASSERT(ep);
 
-  rp2usb_critical_enter();
+  osal_spin_lock(&rp2usb_lock, false);
 
   // Copy data into setup packet buffer (usbh only schedules one setup at a time)
   for (uint8_t i = 0; i < 8; i++) {
@@ -694,7 +694,7 @@ bool hcd_setup_send(uint8_t rhport, uint8_t dev_addr, const uint8_t setup_packet
     sie_start_xfer(true, tu_edpt_dir(ep->ep_addr) == TUSB_DIR_IN, ep->need_pre);
   }
 
-  rp2usb_critical_exit();
+  osal_spin_unlock(&rp2usb_lock, false);
   return true;
 }
 
